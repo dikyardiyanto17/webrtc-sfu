@@ -1,0 +1,4 @@
+## Configuration Bandwidth Setting Is On Development
+## Learning face recognition using tensor flow
+## Video Recording needs improvement, there is no seekbar / duration bar when opened it media player. Only on the chrome, the duration bar is displayed. When downloaded, there is no sound from screen sharing stream. I heard the news the webrtc is developing new function, its called selectAudioOutput() https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/selectAudioOutput
+## Changing from Mesh to Single Forward Unit, Is it creating media server from scratch or using SDK like Live Kit or Media Soup?
