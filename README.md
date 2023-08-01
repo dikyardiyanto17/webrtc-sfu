@@ -272,7 +272,7 @@ peers.on('connection', async socket => {
          })
 ```
 
-- For creating receiving transport, its the same as producing transport
+- For creating receiving transport, its the same as producing transport. First, Get Capabilities, createDevices, and the rest is the same with a bit twist
 
 Client Side
 ```js
