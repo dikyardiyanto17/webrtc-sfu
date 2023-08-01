@@ -8,7 +8,6 @@ const mediasoup = require('mediasoup')
 const app = express();
 const port = 2222;
 
-// SSL certificate paths
 const privateKeyPath = './server.key';
 const certificatePath = './server.crt';
 const credentials = {
@@ -54,9 +53,8 @@ const createWorker = async () => {
     console.log(`worker pid ${worker.pid}`)
 
     worker.on('died', error => {
-        // This implies something serious happened, so kill the application
         console.error('mediasoup worker has died')
-        setTimeout(() => process.exit(1), 2000) // exit in 2 seconds
+        setTimeout(() => process.exit(1), 2000) 
     })
 
     return worker
@@ -67,7 +65,7 @@ const createWebRtcTransport = async (callback) => {
         const webRtcTransport_options = {
             listenIps: [
                 {
-                    ip: '127.0.0.1'
+                    ip: '192.168.206.123'
                 }
             ],
             enableUdp: true,

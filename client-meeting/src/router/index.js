@@ -4,9 +4,8 @@ import socketIO from 'socket.io-client';
 import NotFound from "../views/NotFound";
 import Home from "../views/Home";
 // import Home2 from "../views/Home2";
-const url = 'https://127.0.0.1:2222/'
-const socket = socketIO("https://127.0.0.1:2222/mediasoup");
-// const socket = socketIO.connect("https://127.0.0.1:2222/");
+const url = 'https://192.168.206.123:2222/'
+const socket = socketIO("https://192.168.206.123:2222/mediasoup", { rejectUnauthorized: false });
 
 const router = createBrowserRouter([
     {
@@ -14,7 +13,7 @@ const router = createBrowserRouter([
         children: [
             {
                 path: "",
-                element: <Home url={url} socket={socket}/>
+                element: <Home url={url} socket={socket} />
             },
             {
                 path: '*',
