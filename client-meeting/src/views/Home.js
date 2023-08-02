@@ -28,6 +28,9 @@ export default function Home({ url, socket }) {
     const consumerRef = useRef()
     const [usConsumer, setUsConsumer] = useState()
 
+    const isProducerRef = useRef(false)
+    const [isProducer, setIsProducer] = useState(false)
+
     const paramsRef = useRef({
         encodings: [
             {
@@ -75,35 +78,61 @@ export default function Home({ url, socket }) {
             myStreamRef.current = stream
             const track = stream.getVideoTracks()[0]
             paramsRef.current = { ...paramsRef.current, track }
+            goConnect(true)
         })
     }
 
-    const createDevices = async (e) => {
-        e.preventDefault()
+    const goConsume = () => {
         try {
-            deviceRef.current = new mediasoupClient.Device()
-            setDevice(deviceRef.current)
-
-            await deviceRef.current.load({
-                routerRtpCapabilities: rtpCapabilities
-            })
-            console.log("- Devices Ref : ", deviceRef.current.rtpCapabilities)
+            goConnect(false)
         } catch (error) {
             console.log(error)
         }
     }
 
-    const getRtpCapabilities = (e) => {
-        e.preventDefault()
-        socket.emit('getRtpCapabilities', (data) => {
+    const goConnect = (producerOrConsumer) => {
+        try {
+            isProducerRef.current = producerOrConsumer
+            setIsProducer(isProducerRef.current)
+            deviceRef.current === undefined ? getRtpCapabilities() : goCreateTransport()
+        } catch (error) {
+            console.log(error)
+        }
+    }
+
+    const goCreateTransport = () => {
+        try {
+            isProducerRef.current ? createSendTransport() : createRecvTransport()
+        } catch (error) {
+            console.log(error)
+        }
+    }
+
+    const createDevices = async () => {
+        try {
+            deviceRef.current = new mediasoupClient.Device()
+            setDevice(deviceRef.current)
+
+            await deviceRef.current.load({
+                routerRtpCapabilities: rtpCapabilitiesRef.current
+            })
+            console.log("- Devices Ref : ", deviceRef.current.rtpCapabilities)
+            goCreateTransport()
+        } catch (error) {
+            console.log(error)
+        }
+    }
+
+    const getRtpCapabilities = () => {
+        socket.emit('createRoom', (data) => {
             console.log('- RTP Capabilities : ', data.rtpCapabilities)
             rtpCapabilitiesRef.current = data.rtpCapabilities
             setRtpCapabilities(data.rtpCapabilities)
+            createDevices()
         })
     }
 
-    const createSendTransport = (e) => {
-        e.preventDefault()
+    const createSendTransport = () => {
         socket.emit('createWebRtcTransport', { sender: true }, ({ params }) => {
             if (params.error) {
                 console.log(params.error)
@@ -142,11 +171,11 @@ export default function Home({ url, socket }) {
                     errback(error)
                 }
             })
+            connectSendTransport()
         })
     }
 
-    const connectSendTransport = async (e) => {
-        e.preventDefault()
+    const connectSendTransport = async () => {
         try {
             producerRef.current = await producerTransportRef.current.produce(paramsRef.current)
             setUsProducer(producerRef.current)
@@ -164,8 +193,7 @@ export default function Home({ url, socket }) {
         }
     }
 
-    const createRecvTransport = async (e) => {
-        e.preventDefault()
+    const createRecvTransport = async () => {
         await socket.emit('createWebRtcTransport', { sender: false }, ({ params }) => {
             if (params.error) {
                 console.log(params.error)
@@ -174,7 +202,7 @@ export default function Home({ url, socket }) {
 
             console.log("- Params : ", params)
 
-            consumerTransportRef.current = device.createRecvTransport(params)
+            consumerTransportRef.current = deviceRef.current.createRecvTransport(params)
 
             consumerTransportRef.current.on('connect', async ({ dtlsParameters }, callback, errback) => {
                 try {
@@ -187,11 +215,11 @@ export default function Home({ url, socket }) {
                     errback(error)
                 }
             })
+            connectRecvTransport()
         })
     }
 
-    const connectRecvTransport = async (e) => {
-        e.preventDefault()
+    const connectRecvTransport = async () => {
         await socket.emit('consume', {
             rtpCapabilities: deviceRef.current.rtpCapabilities,
         }, async ({ params }) => {
@@ -219,8 +247,8 @@ export default function Home({ url, socket }) {
 
     useEffect(() => {
         initiate()
-        socket.on('connection-success', socket => {
-            console.log(socket)
+        socket.on('connection-success', ({ socketId, isProducerExist }) => {
+            console.log('- My Socket Id : ', socketId, " - Is Producer Exist : ", isProducerExist)
         })
     }, [])
     return (
@@ -250,13 +278,8 @@ export default function Home({ url, socket }) {
                 </div>
             </div>
             <div>
-                <button onClick={getMyStream}>Get My Stream</button>
-                <button onClick={getRtpCapabilities}>Get RTP Capabilities</button>
-                <button onClick={createDevices}>Create Device</button>
-                <button onClick={createSendTransport}>Create Send Transport</button>
-                <button onClick={connectSendTransport}>Connect Send Transport</button>
-                <button onClick={createRecvTransport}>Create Receive Transport</button>
-                <button onClick={connectRecvTransport}>Connect Receive Transport</button>
+                <button onClick={getMyStream}>Publish</button>
+                <button onClick={goConsume}>Consume</button>
             </div>
         </>
     )
