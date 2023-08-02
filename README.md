@@ -1,5 +1,7 @@
 # webrtc-sfu
-## Media Soup Scheme
+## Media Soup Scheme (one to one, on server there are only one producer and one consumer)
+### Detailed Scheme
+- If there are 2 user (A and B) and A click publish first, then if user A or B click consume, remote video will contain video A.
 - Get RTP Capabilities (on client side emit.something) from server, and in server side create a worker then save the worker
 ```js
 const createWorker = async () => {
@@ -390,4 +392,327 @@ Server Side
         await consumer.resume()
     })
 
+```
+
+### Simplified Scheme
+#### Producer Side
+- Get Local Video [Client Side]
+- Creating Router [Server Side]
+```js
+let router = worker.createRouter({ mediaCodecs })
+```
+- Get RTPCapabilities from server and and save it in Client Side
+```js
+const rtpCapabilities = router.rtpCapabilities
+```
+- Create Device [Client Side] and load the routerRtpCapabilities on devices
+```js
+deviceRef.current = new mediasoupClient.Device()
+await deviceRef.current.load({
+    routerRtpCapabilities: rtpCapabilitiesRef.current
+})
+```
+- Create Send Transport. First, create variable in Server Side producerTransport, then create webrtctransport with option parameters and send the created webrtctransport to Client Side
+
+Client Side Signaling the server to get parameter.
+```js
+socket.emit('createWebRtcTransport', { sender: true }, ({ params }) => {})
+```
+Server Side creating transport variable
+```js
+socket.on('createWebRtcTransport', async ({ sender }, callback) => {
+    console.log(`Is this a sender request? ${sender}`)
+    if (sender)
+        producerTransport = await createWebRtcTransport(callback)
+    else
+        consumerTransport = await createWebRtcTransport(callback)
+})
+```
+Creating WEBRTC TRANSPORT and sending back parameters to Client Side
+```js
+const createWebRtcTransport = async (callback) => {
+    const webRtcTransport_options = {
+        listenIps: [{ ip: '192.168.206.123' }],
+        enableUdp: true,
+        enableTcp: true,
+        preferUdp: true,
+        }
+        let transport = await router.createWebRtcTransport(webRtcTransport_options)
+        console.log(`transport id: ${transport.id}`)
+
+        transport.on('dtlsstatechange', dtlsState => {
+            if (dtlsState === 'closed') {
+                transport.close()
+            }
+        })
+
+        transport.on('close', () => {
+            console.log('transport closed')
+        })
+
+        callback({
+            params: {
+                id: transport.id,
+                iceParameters: transport.iceParameters,
+                iceCandidates: transport.iceCandidates,
+                dtlsParameters: transport.dtlsParameters,
+            }
+        })
+        return transport
+}
+```
+- Assign / Create send Transport from device to Producer Transport
+```js
+const producerTransportRef = useRef()
+
+producerTransportRef.current = deviceRef.current.createSendTransport(params)
+```
+
+- Assign Producer Transport on connect and on produce function
+
+Client Side ProducerTransport On Connect to get dlts parameters and send it to Server Side
+```js
+producerTransportRef.current.on('connect', async ({ dtlsParameters }, callback, errback) => {
+    try {
+        await socket.emit('transport-connect', {dtlsParameters })
+        callback()
+    } catch (error) {
+        errback(error)
+    }
+})
+```
+Server Side Producer Transport On Connect and receiver dltsparameters from Client Side, then Connecting Producer Transport with dlts option from Client Side
+```js
+socket.on('transport-connect', async ({ dtlsParameters }) => {
+    await producerTransport.connect({ dtlsParameters })
+})
+```
+Client Side ProducerTransport On Produce to get parameters and send it to Server Side
+```js
+producerTransportRef.current.on('produce', async (parameters, callback, errback) => {
+    console.log(parameters)
+
+    try {
+        await socket.emit('transport-produce', {
+            kind: parameters.kind,
+            rtpParameters: parameters.rtpParameters,
+            appData: parameters.appData,
+        }, ({ id }) => {
+            callback({ id })
+        })
+    } catch (error) {
+        errback(error)
+    }
+})
+```
+Server Side Producing Transport Produce with parameters from Client Side
+```js
+socket.on('transport-produce', async ({ kind, rtpParameters, appData }, callback) => {
+    producer = await producerTransport.produce({
+        kind,
+        rtpParameters,
+    })
+
+    console.log('Producer ID: ', producer.id, producer.kind)
+
+    producer.on('transportclose', () => {
+        console.log('transport for this producer closed ')
+        producer.close()
+    })
+
+    callback({
+        id: producer.id
+    })
+})
+```
+
+- On Client Side triggering Producer Transport on produce function to create producer
+```js
+const connectSendTransport = async () => {
+    try {
+        producerRef.current = await producerTransportRef.current.produce(paramsRef.current)
+        setUsProducer(producerRef.current)
+
+        producerRef.current.on('trackended', () => {
+            console.log("TRACK ENDED")
+        })
+
+        producerRef.current.on('transportclose', () => {
+            console.log("TRANSPORT ENDED")
+        })
+
+    } catch (error) {
+        console.log(error)
+    }
+}
+```
+
+#### Consumer Side
+- Get Local Video [Client Side]
+- Creating Router if there is no router[Server Side]
+```js
+let router = worker.createRouter({ mediaCodecs })
+```
+- Get RTPCapabilities from server and and save it in Client Side
+```js
+const rtpCapabilities = router.rtpCapabilities
+```
+- Create Device [Client Side] and load the routerRtpCapabilities on devices
+```js
+deviceRef.current = new mediasoupClient.Device()
+await deviceRef.current.load({
+    routerRtpCapabilities: rtpCapabilitiesRef.current
+})
+```
+- Create Receive Transport. First, create variable in Server Side Receive Transport, then create webrtctransport with option parameters and send the created webrtctransport to Client Side
+
+Client Side Signaling the server to get parameter.
+```js
+socket.emit('createWebRtcTransport', { sender: false }, ({ params }) => {})
+```
+Server Side creating transport variable
+```js
+socket.on('createWebRtcTransport', async ({ sender }, callback) => {
+    console.log(`Is this a sender request? ${sender}`)
+    if (sender)
+        producerTransport = await createWebRtcTransport(callback)
+    else
+        consumerTransport = await createWebRtcTransport(callback)
+})
+```
+Creating WEBRTC TRANSPORT and sending back parameters to Client Side
+```js
+const createWebRtcTransport = async (callback) => {
+    const webRtcTransport_options = {
+        listenIps: [{ ip: '192.168.206.123' }],
+        enableUdp: true,
+        enableTcp: true,
+        preferUdp: true,
+        }
+        let transport = await router.createWebRtcTransport(webRtcTransport_options)
+        console.log(`transport id: ${transport.id}`)
+
+        transport.on('dtlsstatechange', dtlsState => {
+            if (dtlsState === 'closed') {
+                transport.close()
+            }
+        })
+
+        transport.on('close', () => {
+            console.log('transport closed')
+        })
+
+        callback({
+            params: {
+                id: transport.id,
+                iceParameters: transport.iceParameters,
+                iceCandidates: transport.iceCandidates,
+                dtlsParameters: transport.dtlsParameters,
+            }
+        })
+        return transport
+}
+```
+- Assign / Create Receive Transport from device to Consumer Transport
+```js
+const consumerTransportRef = useRef()
+
+consumerTransportRef.current = deviceRef.current.createRecvTransport(params)
+```
+
+- Assign Consumer Transport on connect
+
+Client Side ProducerTransport On Connect to get dlts parameters and send it to Server Side
+```js
+consumerTransportRef.current.on('connect', async ({ dtlsParameters }, callback, errback) => {
+    try {
+        await socket.emit('transport-recv-connect', {
+            dtlsParameters,
+        })
+
+        callback()
+    } catch (error) {
+        errback(error)
+    }
+})
+```
+Server Side Consumer Transport On Connect and received dltsparameters from Client Side, then Connecting Consumer Transport with dlts option from Client Side
+```js
+socket.on('transport-recv-connect', async ({ dtlsParameters }) => {
+    await consumerTransport.connect({ dtlsParameters })
+})
+```
+- After that send signal to server with rtpCapabilities data from device variable, then getting parameters from server side, then trigger Consumer Transport Consume
+
+Client Side emitting signal with rtpCapabilities and triggering Consumer Transport Consume with data from server
+```js
+await socket.emit('consume', {
+    rtpCapabilities: deviceRef.current.rtpCapabilities,
+}, async ({ params }) => {
+    if (params.error) {
+        console.log('Cannot Consume')
+        return
+    }
+
+    consumerRef.current = await consumerTransportRef.current.consume({
+        id: params.id,
+        producerId: params.producerId,
+        kind: params.kind,
+        rtpParameters: params.rtpParameters
+    })
+
+    const { track } = consumerRef.current
+
+    remoteStreamRef.current = new MediaStream([track])
+    setRemoteStream(remoteStreamRef.current)
+
+    socket.emit('consumer-resume')
+})
+```
+
+Server Side received rtpCapabilities from Client Side and producing consume from router.canConsume. After that triggering Consumer Transport consume with rtpCapabilities received from Client Side and sending parameters to Client Side and Continue Video.
+```js
+socket.on('consume', async ({ rtpCapabilities }, callback) => {
+    try {
+        if (router.canConsume({
+            producerId: producer.id,
+            rtpCapabilities
+        })) {
+            consumer = await consumerTransport.consume({
+                producerId: producer.id,
+                rtpCapabilities,
+                paused: true,
+            })
+
+            consumer.on('transportclose', () => {
+                console.log('transport close from consumer')
+            })
+
+            consumer.on('producerclose', () => {
+                console.log('producer of consumer closed')
+            })
+
+            const params = {
+                id: consumer.id,
+                producerId: producer.id,
+                kind: consumer.kind,
+                rtpParameters: consumer.rtpParameters,
+            }
+
+            callback({ params })
+        }
+    } catch (error) {
+        console.log(error.message)
+        callback({
+            params: {
+                error: error
+            }
+        })
+    }
+})
+
+socket.on('consumer-resume', async () => {
+    console.log('consumer resume')
+    await consumer.resume()
+})
 ```
